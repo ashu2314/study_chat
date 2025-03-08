@@ -29,9 +29,9 @@ if "user_message_count" not in st.session_state:
 if "messages" not in st.session_state:
         st.session_state.messages = []
 if "show_login" not in st.session_state:
-    st.session_state["show_login"] = True
+    st.session_state["show_login"] = False
 if "login_success" not in st.session_state:
-    st.session_state["login_success"] = False
+    st.session_state["login_success"] = True
     
 def complete_setup():
     if st.session_state["name"]:
