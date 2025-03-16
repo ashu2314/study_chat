@@ -3,3 +3,5 @@ streamlit-js-eval
 openai
 sqlalchemy
 pymysql
+azure-cognitiveservices-speech
+watchdog

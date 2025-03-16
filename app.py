@@ -4,6 +4,7 @@ from streamlit_js_eval import streamlit_js_eval
 from sqlalchemy import create_engine, Column, String, Integer
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
+import azure.cognitiveservices.speech as speechsdk
 
 Base = declarative_base()
 
@@ -19,7 +20,7 @@ class User(Base):
 connection_string = (f"mysql+pymysql://{st.secrets['DB_USER']}:{st.secrets['DB_PASSWORD']}@sql12.freesqldatabase.com"
                      f":3306/sql12765026")
 
-st.set_page_config(page_title="Streamlit Chat")
+st.set_page_config(page_title="Study Chatbot", page_icon="🧑‍🎓")
 st.title("Chatbot")
 
 engine = create_engine(connection_string)
@@ -147,6 +148,21 @@ if not st.session_state.setup_complete \
             st.write("Setup complete. Starting interaction with chat bot...")
         else:
             st.write("Enter your name")
+
+
+def read_text(text: str):
+    result = st.session_state.speech_synthesizer.speak_text_async(text).get()
+    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+        print("Speech synthesized to speaker")
+    elif result.reason == speechsdk.ResultReason.Canceled:
+        cancellation_details = result.cancellation_details
+        print("Speech synthesis canceled: {}".format(cancellation_details.reason))
+        if cancellation_details.reason == speechsdk.CancellationReason.Error:
+            if cancellation_details.error_details:
+                print("Error details: {}".format(cancellation_details.error_details))
+        print("Did you update the subscription info?")
+
+
 if st.session_state.setup_complete:
     st.info(
         """
@@ -157,6 +173,11 @@ if st.session_state.setup_complete:
 
     client = OpenAI(api_key=st.secrets['OPENAI_API_KEY'])
 
+    speech_config = speechsdk.SpeechConfig(subscription=st.secrets['SPEECH_KEY'], region=st.secrets['SPEECH_REGION'])
+    speech_config.speech_synthesis_voice_name = st.secrets['SPEECH_VOICE']
+    if 'speech_synthesizer' not in st.session_state:
+        st.session_state['speech_synthesizer'] = speechsdk.SpeechSynthesizer(speech_config=speech_config)
+
     if "openai_model" not in st.session_state:
         st.session_state.openai_model = 'gpt-4o-mini'
 
@@ -166,7 +187,8 @@ if st.session_state.setup_complete:
             "content": (f"You are a subject matter expert of {st.session_state['subject']} "
                         f"for {st.session_state['standard']} standard and answers the questions precisely "
                         f"for the student with name {st.session_state['name']}."
-                        f"Respond as bullet points in not more than 5")
+                        f"Respond as precise as possible in not more than 10 sentences."
+                        f"Do not use bold fonts")
         }]
 
     for message in st.session_state.messages:
@@ -192,6 +214,7 @@ if st.session_state.setup_complete:
                     max_tokens=256
                 )
                 response = st.write_stream(streamResp)
+                read_text(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
 
         st.session_state.user_message_count += 1
