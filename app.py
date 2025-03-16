@@ -175,7 +175,7 @@ if st.session_state.setup_complete:
 
     speech_config = speechsdk.SpeechConfig(subscription=st.secrets['SPEECH_KEY'], region=st.secrets['SPEECH_REGION'])
     speech_config.speech_synthesis_voice_name = st.secrets['SPEECH_VOICE']
-    if 'speech_synthesizer' not in st.session_state:
+    #if 'speech_synthesizer' not in st.session_state:
 
         #st.session_state['speech_synthesizer'] = speechsdk.SpeechSynthesizer(
         #    speech_config=speech_config,
