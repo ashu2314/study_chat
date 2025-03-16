@@ -23,6 +23,14 @@ connection_string = (f"mysql+pymysql://{st.secrets['DB_USER']}:{st.secrets['DB_P
 st.set_page_config(page_title="Study Chatbot", page_icon="🧑‍🎓")
 st.title("Chatbot")
 
+st.html("""
+        <style>
+        audio {
+            display: none;
+        }
+        </style>
+        """)
+
 engine = create_engine(connection_string)
 Session = sessionmaker(bind=engine)
 
@@ -151,9 +159,18 @@ if not st.session_state.setup_complete \
 
 
 def read_text(text: str):
-    result = st.session_state.speech_synthesizer.speak_text_async(text).get()
+    speech_config = speechsdk.SpeechConfig(subscription=st.secrets['SPEECH_KEY'], region=st.secrets['SPEECH_REGION'])
+    speech_config.speech_synthesis_voice_name = st.secrets['SPEECH_VOICE']
+    speech_synthesizer = speechsdk.SpeechSynthesizer(
+        speech_config=speech_config,
+        audio_config=speechsdk.audio.AudioOutputConfig(filename="./audio/file.wav")
+    )
+
+    result = speech_synthesizer.speak_text_async(text).get()
+    st.audio("./audio/file.wav", autoplay=True)
     if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
         print("Speech synthesized to speaker")
+
     elif result.reason == speechsdk.ResultReason.Canceled:
         cancellation_details = result.cancellation_details
         print("Speech synthesis canceled: {}".format(cancellation_details.reason))
@@ -172,15 +189,6 @@ if st.session_state.setup_complete:
     )
 
     client = OpenAI(api_key=st.secrets['OPENAI_API_KEY'])
-
-    speech_config = speechsdk.SpeechConfig(subscription=st.secrets['SPEECH_KEY'], region=st.secrets['SPEECH_REGION'])
-    speech_config.speech_synthesis_voice_name = st.secrets['SPEECH_VOICE']
-    #if 'speech_synthesizer' not in st.session_state:
-
-        #st.session_state['speech_synthesizer'] = speechsdk.SpeechSynthesizer(
-        #    speech_config=speech_config,
-        #    audio_config=speechsdk.audio.AudioOutputConfig(use_default_speaker=True)
-        #)
 
     if "openai_model" not in st.session_state:
         st.session_state.openai_model = 'gpt-4o-mini'
@@ -218,7 +226,7 @@ if st.session_state.setup_complete:
                     max_tokens=256
                 )
                 response = st.write_stream(streamResp)
-                # read_text(response)
+                read_text(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
 
         st.session_state.user_message_count += 1
