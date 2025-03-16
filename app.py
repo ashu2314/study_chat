@@ -176,10 +176,11 @@ if st.session_state.setup_complete:
     speech_config = speechsdk.SpeechConfig(subscription=st.secrets['SPEECH_KEY'], region=st.secrets['SPEECH_REGION'])
     speech_config.speech_synthesis_voice_name = st.secrets['SPEECH_VOICE']
     if 'speech_synthesizer' not in st.session_state:
-        st.session_state['speech_synthesizer'] = speechsdk.SpeechSynthesizer(
-            speech_config=speech_config,
-            audio_config=speechsdk.audio.AudioOutputConfig(use_default_speaker=True)
-        )
+
+        #st.session_state['speech_synthesizer'] = speechsdk.SpeechSynthesizer(
+        #    speech_config=speech_config,
+        #    audio_config=speechsdk.audio.AudioOutputConfig(use_default_speaker=True)
+        #)
 
     if "openai_model" not in st.session_state:
         st.session_state.openai_model = 'gpt-4o-mini'
@@ -217,7 +218,7 @@ if st.session_state.setup_complete:
                     max_tokens=256
                 )
                 response = st.write_stream(streamResp)
-                #read_text(response)
+                # read_text(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
 
         st.session_state.user_message_count += 1
