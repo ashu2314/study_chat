@@ -217,7 +217,7 @@ if st.session_state.setup_complete:
                     max_tokens=256
                 )
                 response = st.write_stream(streamResp)
-                read_text(response)
+                #read_text(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
 
         st.session_state.user_message_count += 1
