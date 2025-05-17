@@ -1,24 +1,9 @@
 from openai import OpenAI
 import streamlit as st
 from streamlit_js_eval import streamlit_js_eval
-from sqlalchemy import create_engine, Column, String, Integer
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import sessionmaker
 import azure.cognitiveservices.speech as speechsdk
-
-Base = declarative_base()
-
-
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True)
-    name = Column(String)
-    user_id = Column(String)
-    user_password = Column(String)
-
-
-connection_string = (f"mysql+pymysql://{st.secrets['DB_USER']}:{st.secrets['DB_PASSWORD']}@sql12.freesqldatabase.com"
-                     f":3306/sql12765026")
+import pyodbc
+from cryptography.fernet import Fernet
 
 st.set_page_config(page_title="Study Chatbot", page_icon="🧑‍🎓")
 st.title("Chatbot")
@@ -30,9 +15,6 @@ st.html("""
         }
         </style>
         """)
-
-engine = create_engine(connection_string)
-Session = sessionmaker(bind=engine)
 
 if "setup_complete" not in st.session_state:
     st.session_state["setup_complete"] = False
@@ -46,6 +28,58 @@ if "login_success" not in st.session_state:
     st.session_state["login_success"] = True
 
 
+# Initialize connection.
+# Uses st.cache_resource to only run once.
+@st.cache_resource
+def init_connection():
+    return pyodbc.connect(
+        "DRIVER={ODBC Driver 17 for SQL Server};SERVER="
+        + st.secrets["DB_SERVER"]
+        + ";DATABASE="
+        + st.secrets["DB"]
+        + ";UID="
+        + st.secrets["DB_USER"]
+        + ";PWD="
+        + st.secrets["DB_PASSWORD"]
+    )
+
+
+# Perform query.
+# Uses st.cache_data to only rerun when the query changes or after 10 min.
+# @st.cache_data(ttl=600)
+def execute_query(query, *params):
+    conn = init_connection()
+    with conn.cursor() as cur:
+        try:
+            cur.execute(query, params)
+            return cur.fetchall()
+        except Exception as e:
+            st.error(f"Error occurred: {e}")
+
+
+def execute_update(query, *params):
+    conn = init_connection()
+    with conn.cursor() as cur:
+        try:
+            cur.execute(query, params)
+            cur.commit()
+        except Exception as e:
+            st.error(f"Error occurred: {e}")
+
+
+@st.cache_resource
+def init_fernet():
+    return Fernet(st.secrets["SECRET_KEY"])
+
+
+def decrypt_password(encrypted_password: str):
+    return init_fernet().decrypt(encrypted_password.encode()).decode()
+
+
+def encrypt_password(decrypted_password: str):
+    return init_fernet().encrypt(decrypted_password.encode()).decode()
+
+
 def complete_setup():
     if st.session_state["name"]:
         st.session_state.setup_complete = True
@@ -56,47 +90,40 @@ def show_login_form(is_login: bool):
 
 
 def login(user_id_param, password_param):
-    user_id_lower = user_id_param.lower()
-    with Session() as session:
-        try:
-            result = session.query(User).filter(User.user_id == user_id_lower).all()
-            for user in result:
-                if user.user_password == password_param:
-                    st.session_state.name = user.name
-                    st.session_state.login_success = True
+    user_id_lower = user_id_param.lower().replace(' ', '')
+    try:
+        rows = execute_query("select * from users where user_id = ?;", user_id_lower)
+        # Print results.
+        for user in rows:
+            decrypted_password = decrypt_password(user.user_pass)
+            if decrypted_password == password_param:
+                st.session_state.name = user.name
+                st.session_state.login_success = True
 
-            if st.session_state.login_success:
-                st.write("Successfully logged!!")
-            else:
-                st.write("Incorrect userId/password!!")
-        except Exception as e:
-            st.error(f"Error occurred: {e}")
-        finally:
-            session.close()
+        if st.session_state.login_success:
+            st.write("Successfully logged in!!!")
+        else:
+            st.write("Incorrect userId/password!!!")
+    except Exception as e:
+        st.error(f"Error occurred: {e}")
 
 
 def register(name_param, user_id_param, password_param):
     user_id_lower = user_id_param.lower()
-    with Session() as session:
-        try:
-            result = session.query(User).filter(User.user_id == user_id_lower).all()
-            if len(result) > 0:
-                st.write(f"User Id '{user_id_param}' already registered!!!")
-                show_login_form(True)
-            else:
-                user = User(name=name_param,
-                            user_id=user_id_lower,
-                            user_password=password_param
-                            )
-                session.add(user)
-                session.commit()
-                st.write('Registered successfully!!!')
-                show_login_form(True)
+    try:
+        rows = execute_query("select * from users where user_id = ?;", user_id_lower)
+        if len(rows) > 0:
+            st.write(f"User Id '{user_id_param}' already registered!!!")
+            show_login_form(True)
+        else:
+            encrypted_password = encrypt_password(password_param)
+            execute_update("insert into users (name, user_id, user_pass) values(?,?,?);",
+                           name_param, user_id_lower, encrypted_password)
+            st.write('Registered successfully!!!')
+            show_login_form(True)
 
-        except Exception as e:
-            st.error(f"Error occurred: {e}")
-        finally:
-            session.close()
+    except Exception as e:
+        st.error(f"Error occurred: {e}")
 
 
 if not st.session_state.login_success and st.session_state.show_login:
@@ -139,7 +166,7 @@ if not st.session_state.setup_complete \
                  "Sixth", "Seventh", "Eighth", "Ninth", "Tenth",
                  "Eleventh", "Twelfth"],
         placeholder="Choose one",
-        index=5
+        index=7
     )
     st.session_state["subject"] = st.selectbox(
         "Choose your subject",
@@ -151,7 +178,7 @@ if not st.session_state.setup_complete \
     # st.write(f"**Your Standard**: {st.session_state["standard"]}")
     # st.write(f"**Your Subject**: {st.session_state["subject"]}")
 
-    if st.button("Start interaction", on_click=complete_setup):
+    if st.button("Start interaction", on_click=complete_setup, type="primary"):
         if st.session_state.setup_complete:
             st.write("Setup complete. Starting interaction with chat bot...")
         else:
@@ -199,8 +226,17 @@ if st.session_state.setup_complete:
             "content": (f"You are a subject matter expert of {st.session_state['subject']} "
                         f"for {st.session_state['standard']} standard and answers the questions precisely "
                         f"for the student with name {st.session_state['name']}."
-                        f"Respond as precise as possible in not more than 10 sentences."
-                        f"Do not use bold fonts")
+                        f"Respond as precise as possible in the context of subject and standard."
+                        f"Response should be within 200 words."
+                        f"Try to answer as bullet points."
+                        f"Any LaTeX text between single dollar sign ($) will be rendered as a TeX formula."
+                        if st.session_state['subject'] == 'Mathematics' else ""
+                        f"Any TeX text starting with backslash (\\) will be rendered as a TeX formula."
+                        if st.session_state['subject'] == 'Mathematics' else ""
+                        f"Use $(tex_formula)$ in-line delimiters to display equations instead of backslash."
+                        if st.session_state['subject'] == 'Mathematics' else ""
+                        f"The render environment only uses $ (single dollarsign) as a container delimiter, never output $$."
+                        if st.session_state['subject'] == 'Mathematics' else "")
         }]
 
     for message in st.session_state.messages:
@@ -226,7 +262,7 @@ if st.session_state.setup_complete:
                     max_tokens=256
                 )
                 response = st.write_stream(streamResp)
-                read_text(response)
+                # read_text(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
 
         st.session_state.user_message_count += 1
